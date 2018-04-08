@@ -16,21 +16,30 @@ int main() {
         fgets(cmd, 256, stdin);
 
         /* 清理结尾的换行符 */
-        int i;
-        for (i = 0; cmd[i] != '\n'; i++)
-            ;
-        cmd[i] = '\0';
+        {
+            int i;
+            for (i = 0; cmd[i] != '\n'; i++)
+                ;
+            cmd[i] = '\0';
+        }
 
         /* 拆解命令行 */
-        args[0] = cmd;
-        for (i = 0; *args[i]; i++)
-            for (args[i+1] = args[i] + 1; *args[i+1]; args[i+1]++)
-                if (*args[i+1] == ' ') {
-                    *args[i+1] = '\0';
-                    args[i+1]++;
-                    break;
+        {
+            args[0] = cmd;
+            while (*args[0] == ' ') ++args[0];
+            int i;
+            for (i = 0; *args[i]; i++)
+                for (args[i+1] = args[i] + 1; *args[i+1]; args[i+1]++) {
+                    if (*args[i+1] == ' ') {
+                        *args[i+1] = '\0';
+                        do {
+                            args[i+1]++;
+                        }  while (*args[i+1] == ' ');
+                        break;
+                    }
                 }
-        args[i] = NULL;
+            args[i] = NULL;
+        }
 
         /* 没有输入命令 */
         if (!args[0])
