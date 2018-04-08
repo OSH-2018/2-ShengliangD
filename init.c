@@ -14,11 +14,13 @@ int main() {
         printf("# ");
         fflush(stdin);
         fgets(cmd, 256, stdin);
+
         /* 清理结尾的换行符 */
         int i;
         for (i = 0; cmd[i] != '\n'; i++)
             ;
         cmd[i] = '\0';
+
         /* 拆解命令行 */
         args[0] = cmd;
         for (i = 0; *args[i]; i++)
