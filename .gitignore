@@ -1,4 +1,4 @@
 Makefile
 initramfs.gz
 rootfs/
-./init
+init
