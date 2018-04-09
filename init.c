@@ -6,6 +6,9 @@
 #include <fcntl.h>
 
 #include <stdlib.h>
+#include <assert.h>
+
+#define ASSERT()
 
 #define ARG_NUM_MAX 256
 #define JOB_NUM_MAX 256
@@ -70,7 +73,11 @@ job_cmd_t parse_job_cmd(char **seek) {
                 }
                 skip_space(seek);
                 fname = get_string_until(' ', seek);
-                jcmd.stdout = open(fname, O_CREAT | O_WRONLY | (append? O_APPEND : 0));
+                jcmd.stdout = open(
+                        fname,
+                        O_CREAT | O_WRONLY | (append? O_APPEND : 0),
+                        S_IRUSR | S_IWUSR | S_IRGRP
+                    );
                 free(fname);
                 if (jcmd.stdout == -1) {
                     perror("STDIN");
@@ -110,7 +117,8 @@ void parse_line(char **seek) {
 void run_jobs() {
     job_cmd_t *jcmd = job_cmds;
 
-    int prev_stdout = -1;
+    // 对于每个进程，把父进程对前一个进程的管道读端作为 stdin
+    int prev_pipe_read = -1;
     while (jcmd->args[0] != NULL) {
         if (strcmp(jcmd->args[0], "cd") == 0) {
             if (jcmd->args[1])
@@ -125,20 +133,37 @@ void run_jobs() {
         if (strcmp(jcmd->args[0], "exit") == 0)  // TODO
             return;
         if (strcmp(jcmd->args[0], "export") == 0)  // TODO
-            return;
+            continue;
+
+        // 对于每个 job，该进程记录读段，job 用写端代替 stdout
+        int pipefd[2];
+        assert( pipe(pipefd) == 0 );
 
         pid_t pid = fork();
         if (pid == 0) {
-            if (prev_stdout == 0)
+            close(pipefd[0]);   // job 不读
+
+            if (prev_pipe_read != -1)
+                assert( dup2(prev_pipe_read, STDIN_FILENO) != -1 );
+
+            if ((jcmd+1)->args[0] != NULL)  // 如果不是被管道连接的最后一节，则用管道写端作为标准输出
+                assert( dup2(pipefd[1], STDOUT_FILENO) != -1);
+
             if (jcmd->stdin != -1)
-                dup2(jcmd->stdin, 0);
+                assert( dup2(jcmd->stdin, STDIN_FILENO) != -1);
             if (jcmd->stdout != -1)
-                dup2(jcmd->stdout, 1);
+                assert( dup2(jcmd->stdout, STDOUT_FILENO) != -1);
             if (jcmd->stderr != -1)
-                dup2(jcmd->stderr, 2);
+                assert( dup2(jcmd->stderr, STDERR_FILENO) != -1);
+
             execvp(jcmd->args[0], jcmd->args);
+
+            perror(jcmd->args[0]);
             exit(255);
         }
+        close(pipefd[1]);
+        close(prev_pipe_read);
+        prev_pipe_read = pipefd[0];
 
         ++jcmd;
     }
@@ -152,7 +177,8 @@ int main() {
         /* 提示符 */
         printf("# ");
         fflush(stdin);
-        fgets(cmd, 256, stdin);
+        if (fgets(cmd, 256, stdin) == NULL)
+            break;
 
         /* 清理结尾的换行符 */
         {
