@@ -68,6 +68,7 @@ job_cmd_t parse_job_cmd(char **seek) {
                     case '>':  // 追加
                         ++*seek;
                         append = 1;
+                        break;
                     default:
                         append = 0;
                 }
@@ -82,6 +83,8 @@ job_cmd_t parse_job_cmd(char **seek) {
                 if (jcmd.stdout == -1) {
                     perror("STDIN");
                 }
+                if (append)
+                    lseek(jcmd.stdout, 0, SEEK_END);
                 break;
             case '<':
                 ++*seek;
