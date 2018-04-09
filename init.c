@@ -44,11 +44,11 @@ char *get_string_until(char stop, char **ptr) {
 job_cmd_t parse_job_cmd(char **seek) {
     job_cmd_t jcmd;
     jcmd.stdin = jcmd.stdout = jcmd.stderr = NULL;
+    jcmd.stdout_append = jcmd.stderr_append = 0;
 
     int cnt = 0;
-    int cont = 1;
-    while (cont) {
-        skip_space(seek);
+    skip_space(seek);
+    while (**seek != '\0' && **seek != '|') {
         switch (**seek) {
             case '\'':  // 到下一个 '\'' 为止
                 ++*seek;
@@ -76,17 +76,10 @@ job_cmd_t parse_job_cmd(char **seek) {
                 free(jcmd.stdin);
                 jcmd.stdin = get_string_until(' ', seek);
                 break;
-            case '|':  // 结束当前命令的解析
-                ++*seek;
-                cont = 0;
-                break;
-            case '\n':
-            case '\0':
-                cont = 0;
-                break;
             default:  // 当做普通连续字符串对待
                 jcmd.args[cnt++] = get_string_until(' ', seek);
         }
+        skip_space(seek);
     }
     jcmd.args[cnt] = NULL;
     return jcmd;
@@ -96,8 +89,10 @@ void parse_line(char **seek) {
     int cnt = 0;
     while (1) {
         job_cmds[cnt++] = parse_job_cmd(seek);
+        skip_space(seek);
         if (**seek != '|')
             break;
+        ++*seek;
     }
     job_cmds[cnt].args[0] = NULL;
 }
@@ -117,9 +112,9 @@ void run_jobs() {
             continue;
         }
         if (strcmp(jcmd->args[0], "exit") == 0)  // TODO
-            return 0;
+            return;
         if (strcmp(jcmd->args[0], "export") == 0)  // TODO
-            return 0;
+            return;
 
         pid_t pid = fork();
         if (pid == 0) {
@@ -128,6 +123,8 @@ void run_jobs() {
         }
 
         ++jcmd;
+
+        wait(NULL);
     }
 }
 
@@ -158,7 +155,5 @@ int main() {
         }
 
         run_jobs();
-
-        wait(NULL);
     }
 }
