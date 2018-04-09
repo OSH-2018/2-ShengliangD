@@ -7,6 +7,7 @@
 
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 
 #define ASSERT()
 
@@ -28,15 +29,16 @@ char *skip_space(char **ptr) {
 }
 
 // 复制到回车或 stop
-char *get_string_until(char stop, char **ptr) {
+char *get_string_until(char stop[], char **ptr) {
     int cnt = 0;
-    while ((*ptr)[cnt] != stop && (*ptr)[cnt] != '\n' && (*ptr)[cnt] != '\0')
+    while (strchr(stop, (*ptr)[cnt]) == NULL)
         ++cnt;
 
     // 申请内存，复制
     char *ret = (char *)malloc(sizeof(char)*(cnt+1));
     for (int i = 0; i < cnt; ++i)
         ret[i] = (*ptr)[i];
+    ret[cnt] = '\0';
     *ptr += cnt;
 
     return ret;
@@ -54,12 +56,12 @@ job_cmd_t parse_job_cmd(char **seek) {
         switch (**seek) {
             case '\'':  // 到下一个 '\'' 为止
                 ++*seek;
-                jcmd.args[cnt++] = get_string_until('\'', seek);
+                jcmd.args[cnt++] = get_string_until("\'", seek);
                 ++*seek;
                 break;
             case '\"':  // 到下一个 '"' 为止
                 ++*seek;
-                jcmd.args[cnt++] = get_string_until('\"', seek);
+                jcmd.args[cnt++] = get_string_until("\"", seek);
                 ++*seek;
                 break;
             case '>':  // 检查下一个字符是 '>' 还是其他
@@ -73,31 +75,31 @@ job_cmd_t parse_job_cmd(char **seek) {
                         append = 0;
                 }
                 skip_space(seek);
-                fname = get_string_until(' ', seek);
+                fname = get_string_until(" |\0", seek);
                 jcmd.stdout = open(
                         fname,
                         O_CREAT | O_WRONLY | (append? O_APPEND : 0),
                         S_IRUSR | S_IWUSR | S_IRGRP
                     );
-                free(fname);
                 if (jcmd.stdout == -1) {
-                    perror("STDIN");
+                    perror(fname);
                 }
+                free(fname);
                 if (append)
                     lseek(jcmd.stdout, 0, SEEK_END);
                 break;
             case '<':
                 ++*seek;
                 skip_space(seek);
-                fname = get_string_until(' ', seek);
+                fname = get_string_until(" |\0", seek);
                 jcmd.stdin = open(fname, O_RDONLY);
-                free(fname);
                 if (jcmd.stdin == -1) {
-                    perror("STDOUT");
+                    perror(fname);
                 }
+                free(fname);                
                 break;
             default:  // 当做普通连续字符串对待
-                jcmd.args[cnt++] = get_string_until(' ', seek);
+                jcmd.args[cnt++] = get_string_until(" |\0", seek);
         }
         skip_space(seek);
     }
@@ -117,6 +119,28 @@ void parse_line(char **seek) {
     job_cmds[cnt].args[0] = NULL;
 }
 
+void do_setenv(char *seek) {
+    char *name = get_string_until("=", &seek);
+    ++seek;
+    char *value = NULL;
+    switch (*seek) {
+        case '\'':
+            ++seek;
+            value = get_string_until("\'", &seek);
+            break;
+        case '\"':
+            ++seek;
+            value = get_string_until("\"", &seek);
+            break;
+        default:
+            value = get_string_until(" \0", &seek);
+    }
+    setenv(name, value, 1);
+
+    free(name);
+    free(value);
+}
+
 void run_jobs() {
     job_cmd_t *jcmd = job_cmds;
 
@@ -124,19 +148,23 @@ void run_jobs() {
     int prev_pipe_read = -1;
     while (jcmd->args[0] != NULL) {
         if (strcmp(jcmd->args[0], "cd") == 0) {
+            int ret = 0;
             if (jcmd->args[1])
-                chdir(jcmd->args[1]);
+                ret = chdir(jcmd->args[1]);
+            else
+                ret = chdir(getenv("HOME"));
+
+            if (ret != 0)
+                perror("cd");
+
             return;
         }
-        if (strcmp(jcmd->args[0], "pwd") == 0) {  // TODO
-            char wd[4096];
-            puts(getcwd(wd, 4096));
-            return;
-        }
-        if (strcmp(jcmd->args[0], "exit") == 0)  // TODO
+        if (strcmp(jcmd->args[0], "exit") == 0)
             exit(EXIT_SUCCESS);
         if (strcmp(jcmd->args[0], "export") == 0) {  // TODO
-            assert(0);
+            for (int i = 1; jcmd->args[i] != NULL; ++i) {
+                do_setenv(jcmd->args[i]);
+            }
             return;
         }
 
@@ -166,9 +194,13 @@ void run_jobs() {
             perror(jcmd->args[0]);
             exit(255);
         }
+
         close(pipefd[1]);
         close(prev_pipe_read);
         prev_pipe_read = pipefd[0];
+
+        for (int i = 0; jcmd->args[i] != NULL; ++i)
+            free(jcmd->args[i]);
 
         ++jcmd;
     }
