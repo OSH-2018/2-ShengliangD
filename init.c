@@ -3,6 +3,8 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <fcntl.h>
+
 #include <stdlib.h>
 
 #define ARG_NUM_MAX 256
@@ -10,13 +12,9 @@
 typedef struct {
     char *args[ARG_NUM_MAX];
 
-    char *stdin;
-    
-    char *stdout;
-    int stdout_append;  // 是否追加
-    
-    char *stderr;
-    int stderr_append;  // 是否追加
+    int stdin;
+    int stdout;
+    int stderr;    
 } job_cmd_t;
 job_cmd_t job_cmds[JOB_NUM_MAX];
 
@@ -31,7 +29,7 @@ char *get_string_until(char stop, char **ptr) {
     int cnt = 0;
     while ((*ptr)[cnt] != stop && (*ptr)[cnt] != '\n' && (*ptr)[cnt] != '\0')
         ++cnt;
-    
+
     // 申请内存，复制
     char *ret = (char *)malloc(sizeof(char)*(cnt+1));
     for (int i = 0; i < cnt; ++i)
@@ -43,12 +41,13 @@ char *get_string_until(char stop, char **ptr) {
 
 job_cmd_t parse_job_cmd(char **seek) {
     job_cmd_t jcmd;
-    jcmd.stdin = jcmd.stdout = jcmd.stderr = NULL;
-    jcmd.stdout_append = jcmd.stderr_append = 0;
+    jcmd.stdin = jcmd.stdout = jcmd.stderr = -1;
 
     int cnt = 0;
     skip_space(seek);
     while (**seek != '\0' && **seek != '|') {
+        char *fname = NULL;
+        int append = 0;
         switch (**seek) {
             case '\'':  // 到下一个 '\'' 为止
                 ++*seek;
@@ -65,16 +64,27 @@ job_cmd_t parse_job_cmd(char **seek) {
                 switch (**seek) {
                     case '>':  // 追加
                         ++*seek;
-                        jcmd.stdout_append = 1;
+                        append = 1;
                     default:
-                        jcmd.stdout_append = 0;
+                        append = 0;
                 }
-                free(jcmd.stdout);
-                jcmd.stdout = get_string_until(' ', seek);
+                skip_space(seek);
+                fname = get_string_until(' ', seek);
+                jcmd.stdout = open(fname, O_CREAT | O_WRONLY | (append? O_APPEND : 0));
+                free(fname);
+                if (jcmd.stdout == -1) {
+                    perror("STDIN");
+                }
                 break;
             case '<':
-                free(jcmd.stdin);
-                jcmd.stdin = get_string_until(' ', seek);
+                ++*seek;
+                skip_space(seek);
+                fname = get_string_until(' ', seek);
+                jcmd.stdin = open(fname, O_RDONLY);
+                free(fname);
+                if (jcmd.stdin == -1) {
+                    perror("STDOUT");
+                }
                 break;
             default:  // 当做普通连续字符串对待
                 jcmd.args[cnt++] = get_string_until(' ', seek);
@@ -99,7 +109,8 @@ void parse_line(char **seek) {
 
 void run_jobs() {
     job_cmd_t *jcmd = job_cmds;
-    // fork，记录 job，连接管道（注意 pwd）
+
+    int prev_stdout = -1;
     while (jcmd->args[0] != NULL) {
         if (strcmp(jcmd->args[0], "cd") == 0) {
             if (jcmd->args[1])
@@ -118,13 +129,18 @@ void run_jobs() {
 
         pid_t pid = fork();
         if (pid == 0) {
+            if (prev_stdout == 0)
+            if (jcmd->stdin != -1)
+                dup2(jcmd->stdin, 0);
+            if (jcmd->stdout != -1)
+                dup2(jcmd->stdout, 1);
+            if (jcmd->stderr != -1)
+                dup2(jcmd->stderr, 2);
             execvp(jcmd->args[0], jcmd->args);
             exit(255);
         }
 
         ++jcmd;
-
-        wait(NULL);
     }
 }
 
@@ -155,5 +171,9 @@ int main() {
         }
 
         run_jobs();
+        
+        // 等待所有子进程结束
+        while (wait(NULL) > 0)
+            ;
     }
 }
