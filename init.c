@@ -126,17 +126,19 @@ void run_jobs() {
         if (strcmp(jcmd->args[0], "cd") == 0) {
             if (jcmd->args[1])
                 chdir(jcmd->args[1]);
-            continue;
+            return;
         }
         if (strcmp(jcmd->args[0], "pwd") == 0) {  // TODO
             char wd[4096];
             puts(getcwd(wd, 4096));
-            continue;
+            return;
         }
         if (strcmp(jcmd->args[0], "exit") == 0)  // TODO
+            exit(EXIT_SUCCESS);
+        if (strcmp(jcmd->args[0], "export") == 0) {  // TODO
+            assert(0);
             return;
-        if (strcmp(jcmd->args[0], "export") == 0)  // TODO
-            continue;
+        }
 
         // 对于每个 job，该进程记录读段，job 用写端代替 stdout
         int pipefd[2];
