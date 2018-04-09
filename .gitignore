@@ -2,3 +2,4 @@ Makefile
 initramfs.gz
 rootfs/
 init
+test.sh
