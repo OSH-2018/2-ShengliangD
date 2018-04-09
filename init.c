@@ -161,7 +161,7 @@ void run_jobs() {
         }
         if (strcmp(jcmd->args[0], "exit") == 0)
             exit(EXIT_SUCCESS);
-        if (strcmp(jcmd->args[0], "export") == 0) {  // TODO
+        if (strcmp(jcmd->args[0], "export") == 0) {
             for (int i = 1; jcmd->args[i] != NULL; ++i) {
                 do_setenv(jcmd->args[i]);
             }
