@@ -78,7 +78,7 @@ job_cmd_t parse_job_cmd(char **seek) {
                 fname = get_string_until(" |\0", seek);
                 jcmd.stdout = open(
                         fname,
-                        O_CREAT | O_WRONLY | (append? O_APPEND : 0),
+                        O_CREAT | O_TRUNC | O_WRONLY | (append? O_APPEND : 0),
                         S_IRUSR | S_IWUSR | S_IRGRP
                     );
                 if (jcmd.stdout == -1) {
